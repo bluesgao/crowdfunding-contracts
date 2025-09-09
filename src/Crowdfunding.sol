@@ -10,15 +10,15 @@ import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 contract Crowdfunding is Ownable, ReentrancyGuard {
     /// @notice 众筹项目结构体
     struct Project {
-        address creator;         // 发起人地址
-        uint256 goal;            // 目标金额（USDT，6位小数）
-        uint256 pledged;         // 当前已筹金额（USDT，6位小数）
-        uint256 minPledge;       // 最小投资金额（USDT，6位小数）
-        uint256 maxPledge;       // 最大投资金额（USDT，6位小数）
-        uint256 investorCount;   // 投资人数
-        uint64 start;            // 开始时间（Unix 时间戳）
-        uint64 end;              // 结束时间（Unix 时间戳）
-        bool claimed;            // 是否已提取资金
+        address creator; // 发起人地址
+        uint256 goal; // 目标金额（USDT，6位小数）
+        uint256 pledged; // 当前已筹金额（USDT，6位小数）
+        uint256 minPledge; // 最小投资金额（USDT，6位小数）
+        uint256 maxPledge; // 最大投资金额（USDT，6位小数）
+        uint256 investorCount; // 投资人数
+        uint64 start; // 开始时间（Unix 时间戳）
+        uint64 end; // 结束时间（Unix 时间戳）
+        bool claimed; // 是否已提取资金
     }
 
     IERC20 public immutable USDT_TOKEN; // USDT 代币合约地址
@@ -28,44 +28,31 @@ contract Crowdfunding is Ownable, ReentrancyGuard {
 
     /// @notice 事件：创建新项目
     event ProjectCreated(
-        uint256 indexed id, 
-        address indexed creator, 
-        uint256 goal, 
-        uint256 minPledge, 
-        uint256 maxPledge, 
-        uint64 start, 
+        uint256 indexed id,
+        address indexed creator,
+        uint256 goal,
+        uint256 minPledge,
+        uint256 maxPledge,
+        uint64 start,
         uint64 end
     );
     /// @notice 事件：出资
     event Pledged(
-        uint256 indexed id, 
-        address indexed backer, 
-        uint256 amount, 
-        uint256 totalPledged, 
-        uint256 userTotalPledged
+        uint256 indexed id, address indexed backer, uint256 amount, uint256 totalPledged, uint256 userTotalPledged
     );
     /// @notice 事件：取消出资
     event Unpledged(
-        uint256 indexed id, 
-        address indexed backer, 
-        uint256 amount, 
-        uint256 remainingPledged, 
+        uint256 indexed id,
+        address indexed backer,
+        uint256 amount,
+        uint256 remainingPledged,
         uint256 userRemainingPledged
     );
     /// @notice 事件：项目资金已提取
-    event Claimed(
-        uint256 indexed id, 
-        address indexed creator, 
-        uint256 amount, 
-        bool goalReached
-    );
+    event Claimed(uint256 indexed id, address indexed creator, uint256 amount, bool goalReached);
     /// @notice 事件：用户退款
     event Refunded(
-        uint256 indexed id, 
-        address indexed backer, 
-        uint256 amount, 
-        uint256 remainingPledged, 
-        bool goalReached
+        uint256 indexed id, address indexed backer, uint256 amount, uint256 remainingPledged, bool goalReached
     );
 
     /// @param initialOwner 合约所有者（通常为部署者）
@@ -80,7 +67,9 @@ contract Crowdfunding is Ownable, ReentrancyGuard {
     /// @param _maxPledge 最大投资金额（USDT，6位小数）
     /// @param _start 开始时间
     /// @param _end 结束时间
-    function createProject(uint256 _goal, uint256 _minPledge, uint256 _maxPledge, uint64 _start, uint64 _end) external {
+    function createProject(uint256 _goal, uint256 _minPledge, uint256 _maxPledge, uint64 _start, uint64 _end)
+        external
+    {
         require(_start >= block.timestamp, "start < now");
         require(_end > _start, "end <= start");
         require(_goal > 0, "goal = 0");
@@ -144,14 +133,14 @@ contract Crowdfunding is Ownable, ReentrancyGuard {
 
         project.pledged -= _amount;
         investorAmounts[_id][msg.sender] -= _amount;
-        
+
         // 如果用户完全取消出资，减少投资人数
         if (investorAmounts[_id][msg.sender] == 0) {
             project.investorCount--;
             // 注意：这里不直接从投资人列表中移除，因为数组操作成本较高
             // 在批量退款时会检查 investorAmounts 来确定是否真的需要退款
         }
-        
+
         // 将 USDT 转回给用户
         require(USDT_TOKEN.transfer(msg.sender, _amount), "transfer failed");
 
@@ -168,7 +157,7 @@ contract Crowdfunding is Ownable, ReentrancyGuard {
         require(!project.claimed, "already claimed");
 
         project.claimed = true;
-        
+
         // 将 USDT 转给项目发起人
         require(USDT_TOKEN.transfer(project.creator, project.pledged), "transfer failed");
 
@@ -186,7 +175,7 @@ contract Crowdfunding is Ownable, ReentrancyGuard {
         require(bal > 0, "no pledge");
 
         investorAmounts[_id][msg.sender] = 0;
-        
+
         // 将 USDT 转回给支持者
         require(USDT_TOKEN.transfer(msg.sender, bal), "transfer failed");
 
@@ -205,13 +194,13 @@ contract Crowdfunding is Ownable, ReentrancyGuard {
         for (uint256 i = 0; i < _investors.length; i++) {
             address investor = _investors[i];
             uint256 amount = investorAmounts[_id][investor];
-            
+
             if (amount > 0) {
                 investorAmounts[_id][investor] = 0;
-                
+
                 // 将 USDT 转回给投资人
                 require(USDT_TOKEN.transfer(investor, amount), "transfer failed");
-                
+
                 emit Refunded(_id, investor, amount, project.pledged, false);
             }
         }
@@ -240,19 +229,23 @@ contract Crowdfunding is Ownable, ReentrancyGuard {
     /// @notice 获取项目的所有投资人地址（从已知地址列表中筛选）
     /// @param _id 项目 ID
     /// @param _addresses 要检查的地址列表
-    function getInvestorAddresses(uint256 _id, address[] calldata _addresses) external view returns (address[] memory) {
+    function getInvestorAddresses(uint256 _id, address[] calldata _addresses)
+        external
+        view
+        returns (address[] memory)
+    {
         uint256 count = 0;
-        
+
         // 先计算实际投资人数量
         for (uint256 i = 0; i < _addresses.length; i++) {
             if (investorAmounts[_id][_addresses[i]] > 0) {
                 count++;
             }
         }
-        
+
         // 创建结果数组
         address[] memory investors = new address[](count);
-        
+
         uint256 index = 0;
         for (uint256 i = 0; i < _addresses.length; i++) {
             if (investorAmounts[_id][_addresses[i]] > 0) {
@@ -260,30 +253,31 @@ contract Crowdfunding is Ownable, ReentrancyGuard {
                 index++;
             }
         }
-        
+
         return investors;
     }
 
     /// @notice 获取项目的投资记录
     /// @param _id 项目 ID
     /// @param _addresses 要检查的地址列表
-    function getProjectInvestmentRecords(uint256 _id, address[] calldata _addresses) external view returns (
-        address[] memory investors,
-        uint256[] memory amounts
-    ) {
+    function getProjectInvestmentRecords(uint256 _id, address[] calldata _addresses)
+        external
+        view
+        returns (address[] memory investors, uint256[] memory amounts)
+    {
         uint256 count = 0;
-        
+
         // 先计算实际投资人数量
         for (uint256 i = 0; i < _addresses.length; i++) {
             if (investorAmounts[_id][_addresses[i]] > 0) {
                 count++;
             }
         }
-        
+
         // 创建结果数组
         investors = new address[](count);
         amounts = new uint256[](count);
-        
+
         uint256 index = 0;
         for (uint256 i = 0; i < _addresses.length; i++) {
             uint256 amount = investorAmounts[_id][_addresses[i]];
@@ -293,7 +287,7 @@ contract Crowdfunding is Ownable, ReentrancyGuard {
                 index++;
             }
         }
-        
+
         return (investors, amounts);
     }
 }
