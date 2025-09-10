@@ -1,6 +1,22 @@
 [profile.default]
+solc_version = "0.8.24"
+optimizer = true
+optimizer_runs = 200
 src = "src"
 out = "out"
 libs = ["lib"]
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
+
+[rpc_endpoints]
+# 以太坊 Sepolia 官方 RPC
+eth_sepolia = "https://rpc.sepolia.org"
+# 备用 RPC 端点
+eth_sepolia_alt1 = "https://sepolia.infura.io/v3/${INFURA_API_KEY}"
+eth_sepolia_alt2 = "https://sepolia.gateway.tenderly.co"
+eth_sepolia_alt3 = "https://ethereum-sepolia.publicnode.com"
+eth_sepolia_alt4 = "https://sepolia.drpc.org"
+
+[etherscan]
+# 使用 Etherscan 的 API Key（支持 Sepolia）
+eth_sepolia = { key = "${ETHERSCAN_API_KEY}" }

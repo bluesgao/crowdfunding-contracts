@@ -63,4 +63,12 @@ $ cast <subcommand>
 $ forge --help
 $ anvil --help
 $ cast --help
+
+
+  Test USDT token address: 0xa181D2c8566D7e0Ea3Ee8B6B738DEDECBA2D4890
+  Crowdfunding contract address: 0x6C5B501A1b08A5Eb48D6cfBcdb963DfC998f533C
+  Contract owner: 0x69d146468e31606660e8959C5Dfae329D0DdD821
+  USDT token address: 0xa181D2c8566D7e0Ea3Ee8B6B738DEDECBA2D4890
+
+
 ```

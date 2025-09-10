@@ -33,11 +33,22 @@ contract CrowdfundingTest is Test {
             uint64(block.timestamp + 1),
             uint64(block.timestamp + 100)
         );
-        (address creator,, uint256 pledged,, uint256 minPledge, uint256 maxPledge, uint256 investorCount,,) =
-            crowdfunding.projects(1);
+        (
+            address creator,
+            uint256 goal,
+            uint256 pledged,
+            uint256 minPledge,
+            uint256 maxPledge,
+            uint256 investorCount,
+            ,
+            ,
+
+        ) = crowdfunding.projects(1);
 
         // 验证创建者是当前合约
         assertEq(creator, address(this));
+        // 验证目标金额
+        assertEq(goal, 1000 * 10 ** 6);
         // 初始资金为 0
         assertEq(pledged, 0);
         // 验证最小和最大投资金额
@@ -64,7 +75,8 @@ contract CrowdfundingTest is Test {
         crowdfunding.pledge(1, 50 * 10 ** 6);
 
         // 检查项目筹款金额和投资人数
-        (,, uint256 pledged,,,, uint256 investorCount,,) = crowdfunding.projects(1);
+        (, , uint256 pledged, , , uint256 investorCount, , , ) = crowdfunding
+            .projects(1);
         assertEq(pledged, 50 * 10 ** 6);
         assertEq(investorCount, 1);
     }
@@ -140,7 +152,7 @@ contract CrowdfundingTest is Test {
         );
 
         // 初始投资人数应该为 0
-        (,,,,,, uint256 investorCount,,) = crowdfunding.projects(1);
+        (, , , , , uint256 investorCount, , , ) = crowdfunding.projects(1);
         assertEq(investorCount, 0);
 
         // Alice 第一次投资
@@ -150,7 +162,7 @@ contract CrowdfundingTest is Test {
         crowdfunding.pledge(1, 50 * 10 ** 6);
 
         // 投资人数应该为 1
-        (,,,,,, investorCount,,) = crowdfunding.projects(1);
+        (, , , , , investorCount, , , ) = crowdfunding.projects(1);
         assertEq(investorCount, 1);
 
         // Bob 投资
@@ -160,7 +172,7 @@ contract CrowdfundingTest is Test {
         crowdfunding.pledge(1, 30 * 10 ** 6);
 
         // 投资人数应该为 2
-        (,,,,,, investorCount,,) = crowdfunding.projects(1);
+        (, , , , , investorCount, , , ) = crowdfunding.projects(1);
         assertEq(investorCount, 2);
 
         // Alice 再次投资（同一人，投资人数不变）
@@ -170,7 +182,7 @@ contract CrowdfundingTest is Test {
         crowdfunding.pledge(1, 20 * 10 ** 6);
 
         // 投资人数仍然为 2
-        (,,,,,, investorCount,,) = crowdfunding.projects(1);
+        (, , , , , investorCount, , , ) = crowdfunding.projects(1);
         assertEq(investorCount, 2);
 
         // Alice 完全取消出资
@@ -178,7 +190,7 @@ contract CrowdfundingTest is Test {
         crowdfunding.unpledge(1, 70 * 10 ** 6);
 
         // 投资人数应该减少为 1
-        (,,,,,, investorCount,,) = crowdfunding.projects(1);
+        (, , , , , investorCount, , , ) = crowdfunding.projects(1);
         assertEq(investorCount, 1);
     }
 
@@ -217,7 +229,7 @@ contract CrowdfundingTest is Test {
         vm.warp(block.timestamp + 101);
 
         // 验证项目未达到目标
-        (,, uint256 pledged,,,,,,) = crowdfunding.projects(1);
+        (, , uint256 pledged, , , , , , ) = crowdfunding.projects(1);
         assertLt(pledged, 1000 * 10 ** 6);
 
         // 记录退款前的余额
@@ -258,26 +270,41 @@ contract MockUSDT is IERC20 {
         return _totalSupply;
     }
 
-    function balanceOf(address account) external view override returns (uint256) {
+    function balanceOf(
+        address account
+    ) external view override returns (uint256) {
         return _balances[account];
     }
 
-    function transfer(address to, uint256 amount) external override returns (bool) {
+    function transfer(
+        address to,
+        uint256 amount
+    ) external override returns (bool) {
         _balances[msg.sender] -= amount;
         _balances[to] += amount;
         return true;
     }
 
-    function allowance(address owner, address spender) external view override returns (uint256) {
+    function allowance(
+        address owner,
+        address spender
+    ) external view override returns (uint256) {
         return _allowances[owner][spender];
     }
 
-    function approve(address spender, uint256 amount) external override returns (bool) {
+    function approve(
+        address spender,
+        uint256 amount
+    ) external override returns (bool) {
         _allowances[msg.sender][spender] = amount;
         return true;
     }
 
-    function transferFrom(address from, address to, uint256 amount) external override returns (bool) {
+    function transferFrom(
+        address from,
+        address to,
+        uint256 amount
+    ) external override returns (bool) {
         _allowances[from][msg.sender] -= amount;
         _balances[from] -= amount;
         _balances[to] += amount;
