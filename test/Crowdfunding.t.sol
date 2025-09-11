@@ -1,318 +1,381 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {Test} from "forge-std/Test.sol";
+import {Test, console} from "forge-std/Test.sol";
 import {Crowdfunding} from "../src/Crowdfunding.sol";
-import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
+import {Project} from "../src/modules/Project.sol";
+import {Settlement} from "../src/modules/Settlement.sol";
+import {Automation} from "../src/modules/Automation.sol";
+import {Refund} from "../src/modules/Refund.sol";
+import {IProject} from "../src/interfaces/IProject.sol";
 
-/// @title CrowdfundingTest
-/// @notice 测试 Crowdfunding 合约的基本功能
+/// @title 众筹合约测试
+/// @notice 测试众筹合约的核心功能
 contract CrowdfundingTest is Test {
-    Crowdfunding crowdfunding;
-    IERC20 usdtToken;
-    address alice = address(1);
-    address bob = address(2);
+    Crowdfunding public crowdfunding;
+    Project public projectModule;
+    Settlement public settlementModule;
+    Automation public automationModule;
+    Refund public refundModule;
 
-    /// @dev 每个测试运行前执行，部署新的合约实例
+    address public owner = address(0x1);
+    address public user1 = address(0x2);
+    address public user2 = address(0x3);
+
+    // ==================== 工具函数 ====================
+
+    /// @notice 验证项目统计信息
+    function _verifyProjectStats(uint256 projectId) internal view {
+        console.log("=== Verifying project stats ===");
+        IProject.Project memory project = projectModule.getProject(projectId);
+        console.log("Project ID:", project.id);
+        console.log("Project owner:", project.owner);
+        console.log("Target amount:", project.targetAmount);
+        console.log("Min amount:", project.minAmount);
+        console.log("Max amount:", project.maxAmount);
+        console.log("Start time:", project.startTime);
+        console.log("End time:", project.endTime);
+        console.log("contributeAmount:", project.contributeAmount);
+        console.log("contributeCount:", project.contributeCount);
+        console.log("Project status:", uint8(project.status));
+        console.log("Project settled:", project.settled);
+        console.log("=== Project stats verified ===");
+    }
+
+    /// @notice 验证赞助记录
+    function _verifyContributionRecords(uint256 projectId) internal view {
+        console.log("=== Verifying contribution records ===");
+        IProject.ContributionRecord[] memory records = projectModule
+            .getProjectContributionRecord(projectId);
+        for (uint256 i = 0; i < records.length; i++) {
+            console.log(
+                "Contribution record status:",
+                uint8(records[i].status)
+            );
+            console.log("Contribution record amount:", records[i].amount);
+            console.log(
+                "Contribution record contributor:",
+                records[i].contributor
+            );
+            console.log("Contribution record timestamp:", records[i].timestamp);
+        }
+        console.log("=== Contribution records verified ===");
+    }
+
+    /// @notice 验证用户余额
+    function _verifyUserBalance(
+        address user,
+        string memory description
+    ) internal view {
+        console.log("=== Verifying user balance ===");
+        console.log(description, user.balance);
+        console.log("=== User balance verified ===");
+    }
+
+    /// @notice 验证合约余额
+    function _verifyContractBalance(string memory description) internal view {
+        console.log("=== Verifying contract balance ===");
+        console.log(description, address(crowdfunding).balance);
+        console.log("=== Contract balance verified ===");
+    }
+
     function setUp() public {
-        // 部署一个模拟的 USDT 代币合约用于测试
-        usdtToken = IERC20(address(new MockUSDT()));
-        crowdfunding = new Crowdfunding(address(this), address(usdtToken));
+        console.log("=== Setting up test environment ===");
 
-        // 给测试用户分配 USDT
-        MockUSDT(address(usdtToken)).mint(alice, 1000 * 10 ** 6); // 1000 USDT
-        MockUSDT(address(usdtToken)).mint(bob, 1000 * 10 ** 6); // 1000 USDT
+        // 设置区块时间
+        vm.warp(1660000000);
+
+        // 部署模块
+        vm.prank(owner);
+        projectModule = new Project(owner);
+        console.log("Project module deployed at:", address(projectModule));
+
+        vm.prank(owner);
+        settlementModule = new Settlement(owner);
+        console.log(
+            "Settlement module deployed at:",
+            address(settlementModule)
+        );
+
+        vm.prank(owner);
+        automationModule = new Automation(owner);
+        console.log(
+            "Automation module deployed at:",
+            address(automationModule)
+        );
+
+        vm.prank(owner);
+        refundModule = new Refund(owner);
+        console.log("Refund module deployed at:", address(refundModule));
+
+        // 部署主合约
+        vm.prank(owner);
+        crowdfunding = new Crowdfunding(
+            owner,
+            address(projectModule),
+            address(settlementModule),
+            address(automationModule),
+            address(refundModule)
+        );
+        console.log(
+            "Crowdfunding main contract deployed at:",
+            address(crowdfunding)
+        );
+
+        // 设置模块引用
+        vm.prank(owner);
+        projectModule.setSettlementModule(address(settlementModule));
+        console.log("Settlement module reference set in project module");
+
+        vm.prank(owner);
+        automationModule.setProjectModule(address(projectModule));
+        console.log("Project module reference set in automation module");
+
+        vm.prank(owner);
+        refundModule.setAuthorizedContract(address(crowdfunding), true);
+        console.log("Crowdfunding contract authorized in refund module");
+
+        // 转移模块所有权到主合约
+        vm.prank(owner);
+        projectModule.transferOwnership(address(crowdfunding));
+
+        vm.prank(owner);
+        settlementModule.transferOwnership(address(crowdfunding));
+
+        vm.prank(owner);
+        automationModule.transferOwnership(address(crowdfunding));
+
+        vm.prank(owner);
+        refundModule.transferOwnership(address(crowdfunding));
+        console.log("Module ownership transferred to main contract");
+
+        // 给用户一些ETH
+        vm.deal(user1, 10 ether);
+        vm.deal(user2, 10 ether);
+        console.log("User1 ETH balance:", user1.balance);
+        console.log("User2 ETH balance:", user2.balance);
+
+        console.log("=== Test environment setup complete ===");
     }
 
-    /// @dev 测试创建新项目
+    function createTestProject() internal returns (uint256) {
+        vm.prank(owner);
+        return
+            crowdfunding.createProject(
+                user1,
+                5 ether,
+                0.1 ether,
+                1 ether,
+                uint64(block.timestamp),
+                uint64(block.timestamp + 30 days)
+            );
+    }
+
     function testCreateProject() public {
-        crowdfunding.createProject(
-            1000 * 10 ** 6, // 目标金额：1000 USDT
-            10 * 10 ** 6, // 最小投资：10 USDT
-            100 * 10 ** 6, // 最大投资：100 USDT
-            uint64(block.timestamp + 1),
-            uint64(block.timestamp + 100)
-        );
-        (
-            address creator,
-            uint256 goal,
-            uint256 pledged,
-            uint256 minPledge,
-            uint256 maxPledge,
-            uint256 investorCount,
-            ,
-            ,
+        console.log("=== Starting create project test ===");
 
-        ) = crowdfunding.projects(1);
+        uint256 projectId = createTestProject();
+        console.log("Created project ID:", projectId);
 
-        // 验证创建者是当前合约
-        assertEq(creator, address(this));
-        // 验证目标金额
-        assertEq(goal, 1000 * 10 ** 6);
-        // 初始资金为 0
-        assertEq(pledged, 0);
-        // 验证最小和最大投资金额
-        assertEq(minPledge, 10 * 10 ** 6);
-        assertEq(maxPledge, 100 * 10 ** 6);
-        // 验证初始投资人数为 0
-        assertEq(investorCount, 0);
+        assertEq(projectId, 1);
+
+        IProject.Project memory project = crowdfunding.getProject(projectId);
+        console.log("Project owner:", project.owner);
+        console.log("Target amount:", project.targetAmount);
+        console.log("Min contribution:", project.minAmount);
+        console.log("Max contribution:", project.maxAmount);
+        console.log("Project status:", uint8(project.status));
+
+        assertEq(project.owner, user1);
+        assertEq(project.targetAmount, 5 ether);
+        assertEq(project.minAmount, 0.1 ether);
+        assertEq(project.maxAmount, 1 ether);
+        assertEq(uint8(project.status), uint8(IProject.ProjectStatus.Pending));
+
+        console.log("=== Create project test completed ===");
     }
 
-    /// @dev 测试出资功能
-    function testPledge() public {
-        crowdfunding.createProject(
-            1000 * 10 ** 6, // 目标金额：1000 USDT
-            10 * 10 ** 6, // 最小投资：10 USDT
-            100 * 10 ** 6, // 最大投资：100 USDT
-            uint64(block.timestamp),
-            uint64(block.timestamp + 100)
+    function testContributeProject() public {
+        console.log("=== Starting contribution test ===");
+
+        // 创建项目
+        uint256 projectId = createTestProject();
+        console.log("Project ID:", projectId);
+
+        // 激活项目
+        vm.prank(owner);
+        crowdfunding.updateProjectStatus(
+            projectId,
+            IProject.ProjectStatus.Active
         );
+        console.log("Project activated");
 
-        // 以 alice 的身份调用 pledge，出资 50 USDT
-        vm.prank(alice);
-        usdtToken.approve(address(crowdfunding), 50 * 10 ** 6);
-        vm.prank(alice);
-        crowdfunding.pledge(1, 50 * 10 ** 6);
+        // 赞助
+        // user1
+        vm.prank(user1);
+        crowdfunding.contributeProject{value: 0.51 ether}(projectId);
+        console.log("User1 contributed 0.51 ETH");
+        _verifyUserBalance(user1, "User1 current balance:");
 
-        // 检查项目筹款金额和投资人数
-        (, , uint256 pledged, , , uint256 investorCount, , , ) = crowdfunding
-            .projects(1);
-        assertEq(pledged, 50 * 10 ** 6);
-        assertEq(investorCount, 1);
+        // user2
+        vm.prank(user2);
+        crowdfunding.contributeProject{value: 0.5 ether}(projectId);
+        console.log("User2 contributed 0.5 ETH");
+        _verifyUserBalance(user2, "User2 current balance:");
+
+        // 验证合约余额
+        _verifyContractBalance("Contract balance after contributions:");
+
+        // 验证项目统计信息
+        _verifyProjectStats(projectId);
+
+        // 验证赞助记录
+        _verifyContributionRecords(projectId);
+
+        console.log("=== Contribution test completed ===");
     }
 
-    /// @dev 测试投资金额限制
-    function testPledgeLimits() public {
-        crowdfunding.createProject(
-            1000 * 10 ** 6, // 目标金额：1000 USDT
-            10 * 10 ** 6, // 最小投资：10 USDT
-            100 * 10 ** 6, // 最大投资：100 USDT
-            uint64(block.timestamp),
-            uint64(block.timestamp + 100)
+    function testCancelContributeProject() public {
+        console.log("=== Starting cancel contribute project test ===");
+        // 创建并激活项目
+        uint256 projectId = createTestProject();
+        console.log("Project ID:", projectId);
+
+        vm.prank(owner);
+        crowdfunding.updateProjectStatus(
+            projectId,
+            IProject.ProjectStatus.Active
         );
+        console.log("Project activated");
 
-        // 测试投资金额小于最小值
-        vm.prank(alice);
-        usdtToken.approve(address(crowdfunding), 5 * 10 ** 6);
-        vm.prank(alice);
-        vm.expectRevert("amount < minPledge");
-        crowdfunding.pledge(1, 5 * 10 ** 6);
+        // 赞助
+        // user1
+        vm.prank(user1);
+        crowdfunding.contributeProject{value: 0.51 ether}(projectId);
+        console.log("User1 contributed 0.51 ether to project", projectId);
+        _verifyUserBalance(user1, "User1 current balance:");
 
-        // 测试投资金额大于最大值
-        vm.prank(alice);
-        usdtToken.approve(address(crowdfunding), 150 * 10 ** 6);
-        vm.prank(alice);
-        vm.expectRevert("amount > maxPledge");
-        crowdfunding.pledge(1, 150 * 10 ** 6);
+        // user2
+        vm.prank(user2);
+        crowdfunding.contributeProject{value: 0.51 ether}(projectId);
+        console.log("User1 contributed 0.51 ether to project", projectId);
+        _verifyUserBalance(user2, "User2 current balance:");
 
-        // 测试正常投资
-        vm.prank(alice);
-        usdtToken.approve(address(crowdfunding), 50 * 10 ** 6);
-        vm.prank(alice);
-        crowdfunding.pledge(1, 50 * 10 ** 6);
+        // 验证项目统计信息
+        _verifyProjectStats(projectId);
 
-        // 测试再次投资超过最大限制
-        vm.prank(alice);
-        usdtToken.approve(address(crowdfunding), 60 * 10 ** 6);
-        vm.prank(alice);
-        vm.expectRevert("total pledged > maxPledge");
-        crowdfunding.pledge(1, 60 * 10 ** 6);
+        // 验证赞助记录
+        _verifyContributionRecords(projectId);
+
+        // 验证合约余额
+        _verifyContractBalance("Contract balance after contributions:");
+
+        // 取消赞助
+        vm.prank(user2);
+        crowdfunding.cancelContributeProject(projectId);
+        console.log("User2 cancelled contribute project");
+        _verifyUserBalance(user2, "User2 current balance:");
+
+        // 验证赞助记录
+        _verifyContributionRecords(projectId);
+
+        // 验证项目统计信息
+        _verifyProjectStats(projectId);
+
+        //验证用户余额
+        _verifyUserBalance(user2, "User2 balance:");
+
+        // 验证合约余额
+        _verifyContractBalance("Contract balance after cancellation:");
+
+        console.log("=== Cancel contribute project test completed ===");
     }
 
-    /// @dev 测试创建项目时的参数验证
-    function testCreateProjectValidation() public {
-        // 测试最大投资金额大于目标金额
-        vm.expectRevert("maxPledge > goal");
-        crowdfunding.createProject(
-            100 * 10 ** 6, // 目标金额：100 USDT
-            10 * 10 ** 6, // 最小投资：10 USDT
-            150 * 10 ** 6, // 最大投资：150 USDT (大于目标金额)
-            uint64(block.timestamp + 1),
-            uint64(block.timestamp + 100)
+    function testRefundProject() public {
+        console.log("=== Starting refund project test ===");
+        // 创建并激活项目
+        uint256 projectId = createTestProject();
+        console.log("Project ID:", projectId);
+
+        // 激活项目
+        vm.prank(owner);
+        crowdfunding.updateProjectStatus(
+            projectId,
+            IProject.ProjectStatus.Active
         );
+        console.log("Project activated");
 
-        // 测试最大投资金额等于目标金额（应该成功）
-        crowdfunding.createProject(
-            100 * 10 ** 6, // 目标金额：100 USDT
-            10 * 10 ** 6, // 最小投资：10 USDT
-            100 * 10 ** 6, // 最大投资：100 USDT (等于目标金额)
-            uint64(block.timestamp + 1),
-            uint64(block.timestamp + 100)
-        );
-    }
+        // 赞助
+        // user1
+        vm.prank(user1);
+        crowdfunding.contributeProject{value: 0.51 ether}(projectId);
+        console.log("User1 contributed 0.51 ether to project", projectId);
+        _verifyUserBalance(user1, "User1 current balance:");
 
-    /// @dev 测试投资人数统计
-    function testInvestorCount() public {
-        crowdfunding.createProject(
-            1000 * 10 ** 6, // 目标金额：1000 USDT
-            10 * 10 ** 6, // 最小投资：10 USDT
-            100 * 10 ** 6, // 最大投资：100 USDT
-            uint64(block.timestamp),
-            uint64(block.timestamp + 100)
-        );
+        // user2
+        vm.prank(user2);
+        crowdfunding.contributeProject{value: 0.5 ether}(projectId);
+        console.log("User2 contributed 0.5 ether to project", projectId);
+        _verifyUserBalance(user2, "User2 current balance:");
 
-        // 初始投资人数应该为 0
-        (, , , , , uint256 investorCount, , , ) = crowdfunding.projects(1);
-        assertEq(investorCount, 0);
+        // 验证合约余额
+        _verifyContractBalance("Contract balance after contributions:");
 
-        // Alice 第一次投资
-        vm.prank(alice);
-        usdtToken.approve(address(crowdfunding), 50 * 10 ** 6);
-        vm.prank(alice);
-        crowdfunding.pledge(1, 50 * 10 ** 6);
+        // 验证项目统计信息
+        _verifyProjectStats(projectId);
 
-        // 投资人数应该为 1
-        (, , , , , investorCount, , , ) = crowdfunding.projects(1);
-        assertEq(investorCount, 1);
+        // 验证赞助记录
+        _verifyContributionRecords(projectId);
 
-        // Bob 投资
-        vm.prank(bob);
-        usdtToken.approve(address(crowdfunding), 30 * 10 ** 6);
-        vm.prank(bob);
-        crowdfunding.pledge(1, 30 * 10 ** 6);
-
-        // 投资人数应该为 2
-        (, , , , , investorCount, , , ) = crowdfunding.projects(1);
-        assertEq(investorCount, 2);
-
-        // Alice 再次投资（同一人，投资人数不变）
-        vm.prank(alice);
-        usdtToken.approve(address(crowdfunding), 20 * 10 ** 6);
-        vm.prank(alice);
-        crowdfunding.pledge(1, 20 * 10 ** 6);
-
-        // 投资人数仍然为 2
-        (, , , , , investorCount, , , ) = crowdfunding.projects(1);
-        assertEq(investorCount, 2);
-
-        // Alice 完全取消出资
-        vm.prank(alice);
-        crowdfunding.unpledge(1, 70 * 10 ** 6);
-
-        // 投资人数应该减少为 1
-        (, , , , , investorCount, , , ) = crowdfunding.projects(1);
-        assertEq(investorCount, 1);
-    }
-
-    /// @dev 测试批量自动退款功能
-    function testBatchRefund() public {
-        crowdfunding.createProject(
-            1000 * 10 ** 6, // 目标金额：1000 USDT
-            10 * 10 ** 6, // 最小投资：10 USDT
-            100 * 10 ** 6, // 最大投资：100 USDT
-            uint64(block.timestamp),
-            uint64(block.timestamp + 100)
+        // 项目失败
+        vm.prank(owner);
+        crowdfunding.updateProjectStatus(
+            projectId,
+            IProject.ProjectStatus.Failed
         );
 
-        // Alice 和 Bob 都投资
-        vm.prank(alice);
-        usdtToken.approve(address(crowdfunding), 50 * 10 ** 6);
-        vm.prank(alice);
-        crowdfunding.pledge(1, 50 * 10 ** 6);
+        // 验证项目统计信息
+        _verifyProjectStats(projectId);
 
-        vm.prank(bob);
-        usdtToken.approve(address(crowdfunding), 30 * 10 ** 6);
-        vm.prank(bob);
-        crowdfunding.pledge(1, 30 * 10 ** 6);
+        // 验证赞助记录
+        _verifyContributionRecords(projectId);
 
-        // 验证投资人数（使用新的函数）
-        address[] memory testAddresses = new address[](2);
-        testAddresses[0] = alice;
-        testAddresses[1] = bob;
-        assertEq(crowdfunding.getInvestorCountFromList(1, testAddresses), 2);
+        // 退款
+        console.log("Refunding project", projectId);
+        vm.prank(owner); // 只有owner可以退款
+        crowdfunding.refundProject(projectId);
 
-        // 验证投资人信息
-        assertTrue(crowdfunding.isProjectInvestor(1, alice));
-        assertTrue(crowdfunding.isProjectInvestor(1, bob));
+        // 验证项目统计信息
+        _verifyProjectStats(projectId);
 
-        // 时间推进到项目结束
-        vm.warp(block.timestamp + 101);
+        // 验证赞助记录
+        _verifyContributionRecords(projectId);
 
-        // 验证项目未达到目标
-        (, , uint256 pledged, , , , , , ) = crowdfunding.projects(1);
-        assertLt(pledged, 1000 * 10 ** 6);
+        // 验证合约余额
+        _verifyContractBalance("Contract balance after refund:");
 
-        // 记录退款前的余额
-        uint256 aliceBalanceBefore = usdtToken.balanceOf(alice);
-        uint256 bobBalanceBefore = usdtToken.balanceOf(bob);
+        // 测试用户提取退款
+        console.log("Testing user refund claims...");
 
-        // 执行批量退款
-        address[] memory investors = new address[](2);
-        investors[0] = alice;
-        investors[1] = bob;
-        crowdfunding.batchRefund(1, investors);
+        // User1 提取退款
+        uint256 user1Refund = crowdfunding.getPendingRefund(projectId, user1);
+        console.log("User1 pending refund:", user1Refund);
 
-        // 验证退款后的余额
-        uint256 aliceBalanceAfter = usdtToken.balanceOf(alice);
-        uint256 bobBalanceAfter = usdtToken.balanceOf(bob);
+        vm.prank(user1);
+        refundModule.claimRefund(projectId);
 
-        assertEq(aliceBalanceAfter - aliceBalanceBefore, 50 * 10 ** 6);
-        assertEq(bobBalanceAfter - bobBalanceBefore, 30 * 10 ** 6);
+        // User2 提取退款
+        uint256 user2Refund = crowdfunding.getPendingRefund(projectId, user2);
+        console.log("User2 pending refund:", user2Refund);
 
-        // 验证投资人状态已清除
-        assertEq(crowdfunding.investorAmounts(1, alice), 0);
-        assertEq(crowdfunding.investorAmounts(1, bob), 0);
-    }
-}
+        vm.prank(user2);
+        refundModule.claimRefund(projectId);
 
-/// @title MockUSDT
-/// @notice 用于测试的模拟 USDT 代币合约
-contract MockUSDT is IERC20 {
-    mapping(address => uint256) private _balances;
-    mapping(address => mapping(address => uint256)) private _allowances;
+        // 验证最终状态
+        _verifyUserBalance(user1, "User1 balance after claiming refund");
+        _verifyUserBalance(user2, "User2 balance after claiming refund");
+        _verifyContractBalance("Contract balance after all refunds claimed");
 
-    uint256 private _totalSupply;
-    string public name = "Mock USDT";
-    string public symbol = "USDT";
-    uint8 public decimals = 6;
-
-    function totalSupply() external view override returns (uint256) {
-        return _totalSupply;
-    }
-
-    function balanceOf(
-        address account
-    ) external view override returns (uint256) {
-        return _balances[account];
-    }
-
-    function transfer(
-        address to,
-        uint256 amount
-    ) external override returns (bool) {
-        _balances[msg.sender] -= amount;
-        _balances[to] += amount;
-        return true;
-    }
-
-    function allowance(
-        address owner,
-        address spender
-    ) external view override returns (uint256) {
-        return _allowances[owner][spender];
-    }
-
-    function approve(
-        address spender,
-        uint256 amount
-    ) external override returns (bool) {
-        _allowances[msg.sender][spender] = amount;
-        return true;
-    }
-
-    function transferFrom(
-        address from,
-        address to,
-        uint256 amount
-    ) external override returns (bool) {
-        _allowances[from][msg.sender] -= amount;
-        _balances[from] -= amount;
-        _balances[to] += amount;
-        return true;
-    }
-
-    function mint(address to, uint256 amount) external {
-        _balances[to] += amount;
-        _totalSupply += amount;
+        console.log("=== Refund project test completed ===");
     }
 }
